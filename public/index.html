@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SQS Admin UI</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Bootstrap CSS -->
+  <link
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+    rel="stylesheet"
+  />
+
+  <style>
+    .navbar {
+      background-color: #343a40;
+    }
+    .navbar-brand {
+      color: white;
+    }
+    .modal-header {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
+    .btn-close {
+      font-size: 0.8rem;
+    }
+    .attribute-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .btn-add-attribute {
+      background-color: #6c757d;
+      color: white;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 4px;
+    }
+    .btn-remove {
+      background-color: #dc3545;
+      color: white;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 4px;
+    }
+    .form-group {
+      margin-bottom: 1rem;
+    }
+    .table-bordered,
+    .table-bordered thead th,
+    .table-bordered th,
+    .table-bordered tbody td,
+    .table-bordered td,
+    .table-bordered tfoot th,
+    .table-bordered tfoot td {
+      border-color: #a2a0a5 !important;
+    }
+    .table-bordered thead th {
+      border-color: #a2a0a5 !important;
+    }
+  </style>
+</head>
+<body>
+  <!-- Navigation Bar -->
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+    <a class="navbar-brand mx-auto" href="#">SQS Admin UI</a>
+  </nav>
+
+  <div class="container mt-5">
+    <!-- Alerts Container -->
+    <div id="alertContainer"></div>
+
+    <!-- Create Queue -->
+    <h2>Create Queue</h2>
+    <form id="createQueueForm" class="mb-5">
+      <div class="row align-items-center">
+        <div class="col-md-5">
+          <input
+            type="text"
+            name="queueName"
+            id="queueName"
+            placeholder="Enter Queue Name"
+            class="form-control"
+            required
+          />
+        </div>
+        <div class="col-md-4 form-check">
+          <input
+            class="form-check-input"
+            type="checkbox"
+            name="isFifo"
+            id="isFifo"
+          />
+          <label class="form-check-label" for="isFifo">
+            Create as FIFO Queue
+          </label>
+        </div>
+        <div class="col-md-3">
+          <button
+            type="button"
+            class="btn btn-primary"
+            onclick="handleCreateQueue()"
+          >
+            Create Queue
+          </button>
+        </div>
+      </div>
+    </form>
+
+    <!-- Existing Queues Section -->
+    <h2>Existing Queues</h2>
+    <div>
+      <table class="table table-bordered">
+        <thead>
+          <tr>
+            <th>Queue URL</th>
+            <th style="width: 280px;">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="queuesTableBody">
+          <!-- Table rows populated by JavaScript -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Send Message Modal -->
+  <div class="modal fade" id="sendMessageModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+      <div id="alertContainerModal"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Send Message</h5>
+          <button
+            type="button"
+            class="btn-close"
+            data-bs-dismiss="modal"
+          ></button>
+        </div>
+        <div class="modal-body">
+          <form
+            class="form-send-message"
+            onsubmit="event.preventDefault(); handleSendMessage();"
+          >
+            <!-- Queue Name (hidden) -->
+            <input type="hidden" id="modalQueueName" value="" />
+
+            <!-- Message Body -->
+            <div class="form-group">
+              <textarea
+                id="messageBody"
+                class="form-control"
+                placeholder="Enter message"
+                rows="4"
+              ></textarea>
+            </div>
+
+            <!-- Add Attribute Button -->
+            <div class="mb-3">
+              <button
+                type="button"
+                class="btn-add-attribute"
+                onclick="addAttributeRow()"
+              >
+                Add Attribute
+              </button>
+            </div>
+
+            <!-- FIFO Queue Specific Fields -->
+            <div id="fifoFields" style="display: none;">
+              <div class="form-group">
+                <input
+                  type="text"
+                  class="form-control"
+                  id="deduplicationId"
+                  placeholder="Deduplication ID"
+                />
+              </div>
+              <div class="form-group">
+                <input
+                  type="text"
+                  class="form-control"
+                  id="groupId"
+                  placeholder="Group ID"
+                />
+              </div>
+            </div>
+
+            <button type="submit" class="btn btn-success">
+              Send Message
+            </button>
+            <button
+              type="button"
+              class="btn btn-danger"
+              data-bs-dismiss="modal"
+            >
+              Close
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bootstrap JS Bundle -->
+  <script
+    src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"
+  ></script>
+
+  <script>
+    /**
+     * Exibe um alerta temporário no alertContainer.
+     * @param {string} message - Mensagem de alerta
+     * @param {string} [type='success'] - Tipo de alerta (Bootstrap)
+     */
+    function showAlert(message, type = 'success') {
+      const alertHTML = `
+        <div class="alert alert-${type} alert-dismissible fade show mt-3" role="alert">
+          ${message}
+          <button
+            type="button"
+            class="btn-close"
+            data-dismiss="alert"
+            aria-label="Close"
+          ></button>
+        </div>
+      `;
+      const container = document.getElementById('alertContainer');
+      container.innerHTML = alertHTML;
+
+      // Remove automaticamente após 3s
+      setTimeout(() => {
+        const alertElement = container.querySelector('.alert');
+        if (alertElement) {
+          alertElement.classList.remove('show');
+          setTimeout(() => alertElement.remove(), 150);
+        }
+      }, 3000);
+    }
+
+    /**
+     * Cria uma nova fila (SQS) chamando POST /queues
+     */
+    function handleCreateQueue() {
+      const queueName = document.getElementById('queueName').value.trim();
+      const isFifo = document.getElementById('isFifo').checked;
+
+      if (!queueName) {
+        showAlert('Por favor, informe o nome da fila.', 'danger');
+        return;
+      }
+
+      fetch('/queues', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ queueName, isFifo })
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.error) {
+            showAlert(data.error, 'danger');
+            return;
+          }
+          // Limpa campos do formulário
+          document.getElementById('queueName').value = '';
+          document.getElementById('isFifo').checked = false;
+          showAlert(data.message);
+
+          // Atualiza a lista de filas
+          fetchQueues();
+        })
+        .catch(err => {
+          console.error(err);
+          showAlert('Erro ao criar fila!', 'danger');
+        });
+    }
+
+    /**
+     * Busca as filas chamando GET /queues e popula a tabela
+     */
+    function fetchQueues() {
+      fetch('/queues')
+        .then(res => res.json())
+        .then(data => {
+          if (data.error) {
+            showAlert(data.error, 'danger');
+            return;
+          }
+          populateQueuesTable(data.queues || []);
+        })
+        .catch(err => {
+          console.error(err);
+          showAlert('Erro ao listar filas!', 'danger');
+        });
+    }
+
+    /**
+     * Popula a tabela de filas (queuesTableBody)
+     * @param {Array} queues - Lista de filas { name, url }
+     */
+    function populateQueuesTable(queues) {
+      const tbody = document.getElementById('queuesTableBody');
+      tbody.innerHTML = '';
+
+      queues.forEach(queue => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="col-md-4">${queue.url}</td>
+          <td class="col-md-2">
+            <div class="d-flex gap-1 justify-content-center">
+              <button
+                class="btn btn-success btn-sm"
+                data-bs-toggle="modal"
+                data-bs-target="#sendMessageModal"
+                onclick="prepareSendMessage('${queue.name}')"
+              >
+                Send Message
+              </button>
+              <button
+                class="btn btn-primary btn-sm"
+                onclick="openPollingWindow('${queue.name}')"
+              >
+                Polling Message
+              </button>
+              <button
+                class="btn btn-danger btn-sm"
+                onclick="handleDeleteQueue('${queue.name}')"
+              >
+                Delete
+              </button>
+            </div>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    /**
+     * Deleta a fila chamando DELETE /queues/:queueName
+     * @param {string} queueName - Nome da fila a deletar
+     */
+    function handleDeleteQueue(queueName) {
+      fetch(`/queues/${queueName}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' }
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.error) {
+            showAlert(data.error, 'danger');
+          } else {
+            showAlert(data.message);
+            fetchQueues();
+          }
+        })
+        .catch(err => {
+          console.error(err);
+          showAlert('Erro ao deletar fila!', 'danger');
+        });
+    }
+
+    /**
+     * Prepara o modal para enviar mensagem, definindo os campos iniciais
+     * @param {string} queueName - Nome da fila
+     */
+    function prepareSendMessage(queueName) {
+      // Define o campo hidden
+      document.getElementById('modalQueueName').value = queueName;
+      document.getElementById('messageBody').value = '';
+      document.getElementById('deduplicationId').value = '';
+      document.getElementById('groupId').value = '';
+
+      // Exibe campos FIFO se for fila .fifo
+      if (queueName.endsWith('.fifo')) {
+        document.getElementById('fifoFields').style.display = 'block';
+      } else {
+        document.getElementById('fifoFields').style.display = 'none';
+      }
+    }
+
+    /**
+     * Envia uma mensagem chamando POST /queues/:queueName/messages
+     */
+    function handleSendMessage() {
+      const queueName = document.getElementById('modalQueueName').value;
+      const messageBody = document.getElementById('messageBody').value.trim();
+      const deduplicationId = document.getElementById('deduplicationId').value.trim();
+      const groupId = document.getElementById('groupId').value.trim();
+
+      // Coleta os atributos configurados dinamicamente
+      const attributeRows = document.querySelectorAll('.attribute-row');
+      const messageAttributes = [];
+      attributeRows.forEach(row => {
+        const nameInput = row.querySelector('input[placeholder="Message Attribute Name"]');
+        const valueInput = row.querySelector('input[placeholder="Message Attribute Value"]');
+        const typeSelect = row.querySelector('select');
+
+        if (nameInput.value.trim() && valueInput.value.trim()) {
+          messageAttributes.push({
+            name: nameInput.value.trim(),
+            value: valueInput.value.trim(),
+            type: typeSelect.value
+          });
+        }
+      });
+
+      fetch(`/queues/${encodeURIComponent(queueName)}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messageBody,
+          messageAttributes,
+          deduplicationId,
+          groupId
+        })
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.error) {
+            showAlert(data.error, 'danger');
+            return;
+          }
+          showAlert(data.message);
+
+          // Limpar campos
+          document.getElementById('modalQueueName').value = '';
+          document.getElementById('messageBody').value = '';
+          document.getElementById('deduplicationId').value = '';
+          document.getElementById('groupId').value = '';
+
+          // Remove todas as linhas de atributo
+          const allAttrRows = document.querySelectorAll('.attribute-row');
+          allAttrRows.forEach(row => row.remove());
+
+          // Fecha o modal
+          const modalEl = document.getElementById('sendMessageModal');
+          const modalInstance = bootstrap.Modal.getInstance(modalEl);
+          modalInstance.hide();
+        })
+        .catch(err => {
+          console.error(err);
+          showAlert('Erro ao enviar mensagem!', 'danger');
+        });
+    }
+
+    /**
+     * Abre a janela de polling (listagem de mensagens) em tela "maximizada"
+     * @param {string} queueName - Nome da fila
+     */
+    function openPollingWindow(queueName) {
+      const width = screen.availWidth;
+      const height = screen.availHeight;
+      const params = [
+        'toolbar=no',
+        'location=no',
+        'status=no',
+        'menubar=no',
+        'scrollbars=yes',
+        'resizable=yes',
+        `width=${width}`,
+        `height=${height}`
+      ].join(',');
+
+      window.open(`messages.html?queueName=${queueName}`, '_blank', params);
+    }
+
+    /**
+     * Adiciona uma nova linha de atributo
+     */
+    function addAttributeRow() {
+      const btnAdd = document.querySelector('.btn-add-attribute');
+      const newRow = document.createElement('div');
+      newRow.className = 'attribute-row';
+      newRow.innerHTML = `
+        <input
+          type="text"
+          class="form-control"
+          placeholder="Message Attribute Name"
+        />
+        <input
+          type="text"
+          class="form-control"
+          placeholder="Message Attribute Value"
+        />
+        <select class="form-select">
+          <option>String</option>
+          <option>Number</option>
+          <option>Binary</option>
+        </select>
+        <button
+          type="button"
+          class="btn-remove"
+          onclick="removeAttributeRow(this)"
+        >
+          X
+        </button>
+      `;
+      btnAdd.parentElement.before(newRow);
+    }
+
+    /**
+     * Remove a linha de atributo atual
+     * @param {HTMLButtonElement} btn
+     */
+    function removeAttributeRow(btn) {
+      const row = btn.closest('.attribute-row');
+      row.remove();
+    }
+
+    // Ao carregar a página, lista as filas existentes
+    document.addEventListener('DOMContentLoaded', () => {
+      fetchQueues();
+    });
+  </script>
+</body>
+</html>
